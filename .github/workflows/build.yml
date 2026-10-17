@@ -317,6 +317,16 @@ jobs:
                   getWindow().setStatusBarColor(BG);
                   getWindow().setNavigationBarColor(BG);
                   prefs = getSharedPreferences("s", MODE_PRIVATE);
+                  // Fehlerdiagnose: Absturz-Text merken und beim naechsten Start anzeigen
+                  Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+                      try {
+                          java.io.StringWriter sw = new java.io.StringWriter();
+                          e.printStackTrace(new java.io.PrintWriter(sw));
+                          String st = sw.toString();
+                          prefs.edit().putString("crash", st.substring(0, Math.min(700, st.length()))).commit();
+                      } catch (Throwable x) { }
+                      System.exit(1);
+                  });
 
                   buildUi();
                   setupWebView();
@@ -767,6 +777,12 @@ jobs:
                   mainView.setVisibility(View.GONE);
                   lockView.setVisibility(View.VISIBLE);
                   lockTitle.setText(prefs.contains("h") ? "ENTSPERREN" : "NEUE PIN FESTLEGEN (MIN. 4 ZIFFERN)");
+                  String crash = prefs.getString("crash", null);
+                  if (crash != null) {
+                      lockTitle.setText(lockTitle.getText() + "\n\nLETZTER ABSTURZ:\n" + crash);
+                      lockTitle.setTextSize(9);
+                      prefs.edit().remove("crash").apply();
+                  }
                   pinField.setText("");
               }
 
