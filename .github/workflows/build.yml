@@ -1,4 +1,4 @@
-name: Build GHOST Browser APK
+name: Build GHOST Browser APK (einfach)
 
 on:
   workflow_dispatch:
@@ -23,7 +23,7 @@ jobs:
       - name: Signierschluessel erzeugen
         run: |
           keytool -genkeypair -v -keystore release.jks -alias k \
-            -keyalg RSA -keysize 4096 -validity 10000 \
+            -keyalg RSA -keysize 2048 -validity 10000 \
             -storepass ghostbrowser -keypass ghostbrowser \
             -dname "CN=Rechner"
 
@@ -38,11 +38,7 @@ jobs:
               repositories { google(); mavenCentral(); gradlePluginPortal() }
           }
           dependencyResolutionManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  maven { url "https://raw.githubusercontent.com/guardianproject/gpmaven/master" }
-              }
+              repositories { google(); mavenCentral() }
           }
           rootProject.name = "Ghost"
           include(":app")
@@ -56,7 +52,7 @@ jobs:
 
           cat > gradle.properties <<'EOF'
           android.useAndroidX=true
-          org.gradle.jvmargs=-Xmx3g
+          org.gradle.jvmargs=-Xmx2g
           EOF
 
           cat > app/build.gradle <<'EOF'
@@ -68,12 +64,8 @@ jobs:
                   applicationId 'com.example.privbrowser'
                   minSdk 24
                   targetSdk 34
-                  versionCode 2
-                  versionName '3.0'
-                  ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
-              }
-              packagingOptions {
-                  jniLibs { useLegacyPackaging = true }
+                  versionCode 4
+                  versionName '4.0'
               }
               signingConfigs {
                   release {
@@ -85,11 +77,8 @@ jobs:
               }
               buildTypes {
                   release {
-                      minifyEnabled true
-                      shrinkResources false
-                      debuggable false
+                      minifyEnabled false
                       signingConfig signingConfigs.release
-                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
                   }
               }
               compileOptions {
@@ -103,19 +92,9 @@ jobs:
           }
           dependencies {
               implementation 'androidx.webkit:webkit:1.12.1'
-              implementation 'info.guardianproject:tor-android:0.4.8.11'
-              implementation 'info.guardianproject:jtorctl:0.4.5.7'
           }
           EOF
 
-          cat > app/proguard-rules.pro <<'EOF'
-          -dontwarn **
-          -keep class org.torproject.** { *; }
-          -keep class net.freehaven.** { *; }
-          -keep class info.guardianproject.** { *; }
-          EOF
-
-          # Neutrales Tarn-Icon (Taschenrechner)
           cat > app/src/main/res/drawable/ic_launcher.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <vector xmlns:android="http://schemas.android.com/apk/res/android"
@@ -137,7 +116,6 @@ jobs:
                   android:label="Rechner"
                   android:icon="@drawable/ic_launcher"
                   android:allowBackup="false"
-                  android:usesCleartextTraffic="true"
                   android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
                   <activity
                       android:name=".MainActivity"
@@ -154,7 +132,6 @@ jobs:
           </manifest>
           EOF
 
-          # Startseite im Neon-Design
           cat > app/src/main/assets/start.html <<'EOF'
           <!DOCTYPE html>
           <html><head><meta charset="utf-8">
@@ -177,15 +154,14 @@ jobs:
           .f span{border:1px solid #2a2a40;border-radius:20px;padding:6px 12px;font-size:12px;color:#9a9ac0}
           </style></head><body>
           <h1>GHOST</h1>
-          <p class="s">PRIVAT &middot; ANONYM &middot; SPURLOS</p>
-          <form action="http://duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion/" method="get" autocomplete="off">
+          <p class="s">PRIVAT &middot; SPURLOS</p>
+          <form action="https://duckduckgo.com/" method="get" autocomplete="off">
             <input type="text" name="q" placeholder="Suchen &hellip;" autocomplete="off" autocapitalize="off" spellcheck="false">
           </form>
-          <div class="f"><span>Nur &uuml;ber Tor</span><span>Kein Verlauf</span><span>HTTPS-only</span><span>Kein WebRTC</span></div>
+          <div class="f"><span>Kein Verlauf</span><span>HTTPS-only</span><span>Kein WebRTC</span><span>Kein Tracking</span></div>
           </body></html>
           EOF
 
-          # Anti-Tracking / Anti-Fingerprint Skript (vor jeder Seite)
           cat > app/src/main/assets/harden.js <<'EOF'
           (function(){
             function def(o,p,v){try{Object.defineProperty(o,p,{get:function(){return v},configurable:true});}catch(e){}}
@@ -193,30 +169,11 @@ jobs:
               try{delete window[n];}catch(e){}
               def(window,n,undefined);
             });
-            def(navigator,'mediaDevices',undefined);
             def(navigator,'getBattery',undefined);
             def(navigator,'connection',undefined);
             def(navigator,'hardwareConcurrency',4);
             def(navigator,'deviceMemory',4);
-            def(navigator,'language','en-US');
-            def(navigator,'languages',['en-US','en']);
-            def(navigator,'platform','Linux armv81');
             def(navigator,'doNotTrack','1');
-            try{
-              var o=HTMLCanvasElement.prototype.toDataURL;
-              HTMLCanvasElement.prototype.toDataURL=function(){
-                try{var c=this.getContext('2d');
-                  if(c&&this.width>0&&this.height>0){var d=c.getImageData(0,0,1,1);d.data[0]^=1;c.putImageData(d,0,0);}
-                }catch(e){}
-                return o.apply(this,arguments);
-              };
-              var g=CanvasRenderingContext2D.prototype.getImageData;
-              CanvasRenderingContext2D.prototype.getImageData=function(){
-                var r=g.apply(this,arguments);
-                try{if(r&&r.data&&r.data.length>3){r.data[0]^=1;}}catch(e){}
-                return r;
-              };
-            }catch(e){}
           })();
           EOF
 
@@ -224,20 +181,13 @@ jobs:
           package com.example.privbrowser;
 
           import android.app.Activity;
-          import android.content.ComponentName;
-          import android.content.Intent;
-          import android.content.ServiceConnection;
-          import android.os.IBinder;
-          import android.content.SharedPreferences;
           import android.content.res.ColorStateList;
           import android.graphics.Color;
-          import android.graphics.Typeface;
           import android.graphics.drawable.GradientDrawable;
           import android.net.Uri;
           import android.os.Build;
           import android.os.Bundle;
           import android.text.InputType;
-          import android.util.Base64;
           import android.view.Gravity;
           import android.view.View;
           import android.view.WindowManager;
@@ -247,32 +197,21 @@ jobs:
           import android.webkit.PermissionRequest;
           import android.webkit.WebChromeClient;
           import android.webkit.WebResourceRequest;
-          import android.webkit.WebResourceResponse;
           import android.webkit.WebSettings;
           import android.webkit.WebStorage;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
           import android.widget.EditText;
-          import android.widget.FrameLayout;
           import android.widget.LinearLayout;
           import android.widget.ProgressBar;
           import android.widget.TextView;
           import android.widget.Toast;
-          import androidx.webkit.ProxyConfig;
-          import androidx.webkit.ProxyController;
           import androidx.webkit.WebViewCompat;
           import androidx.webkit.WebViewFeature;
-          import java.io.ByteArrayInputStream;
           import java.io.ByteArrayOutputStream;
           import java.io.InputStream;
-          import java.net.InetSocketAddress;
-          import java.net.Socket;
           import java.net.URLEncoder;
-          import java.security.MessageDigest;
-          import java.security.SecureRandom;
           import java.util.Collections;
-          import javax.crypto.SecretKeyFactory;
-          import javax.crypto.spec.PBEKeySpec;
 
           public class MainActivity extends Activity {
 
@@ -283,31 +222,13 @@ jobs:
               static final int MAGENTA = Color.parseColor("#FF2BD6");
               static final int TEXT = Color.parseColor("#E8E8F5");
               static final int MUTED = Color.parseColor("#6B6B85");
-              static final int OK = Color.parseColor("#39FF88");
-              static final int BAD = Color.parseColor("#FF3860");
-
-              static final String SEARCH = "http://duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion/";
+              static final String SEARCH = "https://duckduckgo.com/";
               static final int IME_NO_PERSONALIZED_LEARNING = 0x01000000;
 
               private WebView web;
               private EditText bar;
               private ProgressBar pb;
-              private TextView torDot;
-              private FrameLayout rootView;
-              private LinearLayout mainView;
-              private LinearLayout lockView;
-              private TextView lockTitle;
-              private EditText pinField;
-              private SharedPreferences prefs;
-
-              private int socksPort = 0;
-              private ServiceConnection torConn;
-              private boolean proxyReady = false;
-              private boolean torOk = false;
-              private boolean locked = true;
               private boolean clearAfter = false;
-              private int fails = 0;
-              private long lockedUntil = 0;
 
               @Override
               protected void onCreate(Bundle b) {
@@ -316,25 +237,10 @@ jobs:
                           WindowManager.LayoutParams.FLAG_SECURE);
                   getWindow().setStatusBarColor(BG);
                   getWindow().setNavigationBarColor(BG);
-                  prefs = getSharedPreferences("s", MODE_PRIVATE);
-                  // Fehlerdiagnose: Absturz-Text merken und beim naechsten Start anzeigen
-                  Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
-                      try {
-                          java.io.StringWriter sw = new java.io.StringWriter();
-                          e.printStackTrace(new java.io.PrintWriter(sw));
-                          String st = sw.toString();
-                          prefs.edit().putString("crash", st.substring(0, Math.min(700, st.length()))).commit();
-                      } catch (Throwable x) { }
-                      System.exit(1);
-                  });
-
                   buildUi();
                   setupWebView();
-                  startTor();
-                  showLock();
+                  home();
               }
-
-              // ---------- UI ----------
 
               private int dp(int v) {
                   return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
@@ -360,13 +266,10 @@ jobs:
               }
 
               private void buildUi() {
-                  rootView = new FrameLayout(this);
-                  rootView.setBackgroundColor(BG);
+                  LinearLayout main = new LinearLayout(this);
+                  main.setOrientation(LinearLayout.VERTICAL);
+                  main.setBackgroundColor(BG);
 
-                  mainView = new LinearLayout(this);
-                  mainView.setOrientation(LinearLayout.VERTICAL);
-
-                  // Obere Leiste
                   LinearLayout top = new LinearLayout(this);
                   top.setOrientation(LinearLayout.HORIZONTAL);
                   top.setGravity(Gravity.CENTER_VERTICAL);
@@ -393,118 +296,42 @@ jobs:
                   bar.setInputType(InputType.TYPE_CLASS_TEXT
                           | InputType.TYPE_TEXT_VARIATION_URI
                           | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-                  if (Build.VERSION.SDK_INT >= 26) {
-                      bar.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
-                  }
                   bar.setOnEditorActionListener((v, id, e) -> {
-                      if (id == EditorInfo.IME_ACTION_GO || id == EditorInfo.IME_ACTION_DONE || e != null) {
-                          go(bar.getText().toString().trim());
-                          return true;
-                      }
-                      return false;
+                      go(bar.getText().toString().trim());
+                      return true;
                   });
                   top.addView(bar, new LinearLayout.LayoutParams(0, -2, 1f));
+                  main.addView(top, new LinearLayout.LayoutParams(-1, -2));
 
-                  torDot = new TextView(this);
-                  torDot.setText("\u25CF TOR");
-                  torDot.setTextSize(11);
-                  torDot.setTypeface(Typeface.DEFAULT_BOLD);
-                  torDot.setTextColor(BAD);
-                  torDot.setPadding(dp(10), 0, 0, 0);
-                  top.addView(torDot);
-
-                  mainView.addView(top, new LinearLayout.LayoutParams(-1, -2));
-
-                  // Fortschrittsbalken
                   pb = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
                   pb.setMax(100);
                   pb.setProgressTintList(ColorStateList.valueOf(CYAN));
                   pb.setProgressBackgroundTintList(ColorStateList.valueOf(SURFACE));
                   pb.setVisibility(View.INVISIBLE);
-                  mainView.addView(pb, new LinearLayout.LayoutParams(-1, dp(3)));
+                  main.addView(pb, new LinearLayout.LayoutParams(-1, dp(3)));
 
-                  // WebView
                   web = new WebView(this);
                   web.setBackgroundColor(BG);
-                  web.setOverScrollMode(View.OVER_SCROLL_NEVER);
-                  mainView.addView(web, new LinearLayout.LayoutParams(-1, 0, 1f));
+                  main.addView(web, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-                  // Untere Leiste
                   LinearLayout nav = new LinearLayout(this);
                   nav.setOrientation(LinearLayout.HORIZONTAL);
                   nav.setBackgroundColor(SURFACE);
                   nav.addView(navBtn("\u2039", v -> { if (web.canGoBack()) web.goBack(); }));
                   nav.addView(navBtn("\u203A", v -> { if (web.canGoForward()) web.goForward(); }));
-                  nav.addView(navBtn("\u27F3", v -> { checkTor(); web.reload(); }));
+                  nav.addView(navBtn("\u27F3", v -> web.reload()));
                   nav.addView(navBtn("\u2302", v -> home()));
-                  TextView burn = navBtn("\uD83D\uDD25", v -> newIdentity());
-                  burn.setTextSize(20);
-                  nav.addView(burn);
-                  mainView.addView(nav, new LinearLayout.LayoutParams(-1, -2));
+                  nav.addView(navBtn("\uD83D\uDD25", v -> {
+                      wipe();
+                      home();
+                      Toast.makeText(this, "Alles gelöscht", Toast.LENGTH_SHORT).show();
+                  }));
+                  main.addView(nav, new LinearLayout.LayoutParams(-1, -2));
 
-                  rootView.addView(mainView, new FrameLayout.LayoutParams(-1, -1));
-
-                  // Sperrbildschirm
-                  lockView = new LinearLayout(this);
-                  lockView.setOrientation(LinearLayout.VERTICAL);
-                  lockView.setGravity(Gravity.CENTER);
-                  lockView.setBackgroundColor(BG);
-                  lockView.setPadding(dp(32), dp(32), dp(32), dp(32));
-                  lockView.setClickable(true);
-
-                  TextView logo = new TextView(this);
-                  logo.setText("GHOST");
-                  logo.setTextSize(40);
-                  logo.setTypeface(Typeface.DEFAULT_BOLD);
-                  logo.setLetterSpacing(0.3f);
-                  logo.setTextColor(CYAN);
-                  logo.setShadowLayer(24f, 0f, 0f, CYAN);
-                  logo.setGravity(Gravity.CENTER);
-                  lockView.addView(logo);
-
-                  lockTitle = new TextView(this);
-                  lockTitle.setTextSize(13);
-                  lockTitle.setTextColor(MUTED);
-                  lockTitle.setLetterSpacing(0.15f);
-                  lockTitle.setGravity(Gravity.CENTER);
-                  lockTitle.setPadding(0, dp(8), 0, dp(32));
-                  lockView.addView(lockTitle);
-
-                  pinField = new EditText(this);
-                  pinField.setHint("PIN");
-                  pinField.setHintTextColor(MUTED);
-                  pinField.setTextColor(TEXT);
-                  pinField.setTextSize(24);
-                  pinField.setGravity(Gravity.CENTER);
-                  pinField.setSingleLine(true);
-                  pinField.setBackground(pill(FIELD, MAGENTA, 28));
-                  pinField.setPadding(dp(20), dp(14), dp(20), dp(14));
-                  pinField.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
-                  pinField.setImeOptions(EditorInfo.IME_ACTION_DONE | IME_NO_PERSONALIZED_LEARNING);
-                  pinField.setOnEditorActionListener((v, id, e) -> { onPinSubmit(); return true; });
-                  lockView.addView(pinField, new LinearLayout.LayoutParams(-1, -2));
-
-                  TextView ok = new TextView(this);
-                  ok.setText("ENTSPERREN");
-                  ok.setTextSize(15);
-                  ok.setTypeface(Typeface.DEFAULT_BOLD);
-                  ok.setTextColor(BG);
-                  ok.setGravity(Gravity.CENTER);
-                  ok.setBackground(pill(CYAN, 0, 28));
-                  ok.setPadding(dp(20), dp(14), dp(20), dp(14));
-                  ok.setOnClickListener(v -> onPinSubmit());
-                  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-                  lp.topMargin = dp(18);
-                  lockView.addView(ok, lp);
-
-                  rootView.addView(lockView, new FrameLayout.LayoutParams(-1, -1));
-                  setContentView(rootView);
+                  setContentView(main);
               }
 
-              // ---------- WebView ----------
-
               private void setupWebView() {
-                  WebView.setWebContentsDebuggingEnabled(false);
                   WebSettings s = web.getSettings();
                   s.setJavaScriptEnabled(true);
                   s.setDomStorageEnabled(true);
@@ -513,29 +340,17 @@ jobs:
                   s.setGeolocationEnabled(false);
                   s.setAllowFileAccess(false);
                   s.setAllowContentAccess(false);
-                  s.setJavaScriptCanOpenWindowsAutomatically(false);
                   s.setSupportMultipleWindows(false);
-                  s.setMediaPlaybackRequiresUserGesture(true);
                   s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-                  s.setTextZoom(100);
                   if (Build.VERSION.SDK_INT >= 26) {
-                      s.setSafeBrowsingEnabled(false); // keine Anfragen an Google
-                      web.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+                      s.setSafeBrowsingEnabled(false);
                   }
-
-                  // Neutraler Chrome-Android-User-Agent (gleiche Engine, daher keine Diskrepanz)
-                  String ua = s.getUserAgentString()
-                          .replaceAll("\\(Linux; Android [^)]*\\)", "(Linux; Android 10; K)")
-                          .replaceAll("Chrome/(\\d+)\\.[\\d.]+", "Chrome/$1.0.0.0")
-                          .replace(" Version/4.0", "");
-                  s.setUserAgentString(ua);
-
-                  CookieManager cm = CookieManager.getInstance();
-                  cm.setAcceptCookie(true);
-                  cm.setAcceptThirdPartyCookies(web, false);
+                  CookieManager.getInstance().setAcceptCookie(true);
+                  CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
 
                   final String hardenJs = asset("harden.js");
-                  if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+                  final boolean docStart = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT);
+                  if (docStart) {
                       WebViewCompat.addDocumentStartJavaScript(web, hardenJs, Collections.singleton("*"));
                   }
 
@@ -555,9 +370,7 @@ jobs:
                   web.setWebViewClient(new WebViewClient() {
                       @Override
                       public void onPageStarted(WebView v, String u, android.graphics.Bitmap f) {
-                          if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-                              v.evaluateJavascript(hardenJs, null);
-                          }
+                          if (!docStart) v.evaluateJavascript(hardenJs, null);
                       }
                       @Override
                       public void onPageFinished(WebView v, String u) {
@@ -571,27 +384,11 @@ jobs:
                           String sch = u.getScheme();
                           if ("https".equals(sch) || "about".equals(sch) || "data".equals(sch)) return false;
                           if ("http".equals(sch)) {
-                              if (isOnion(u.getHost())) return false;
-                              v.loadUrl(u.buildUpon().scheme("https").build().toString()); // HTTPS-Upgrade
-                              return true;
+                              v.loadUrl(u.buildUpon().scheme("https").build().toString());
                           }
-                          return true; // intent:, market:, tel: ... alles blocken
-                      }
-                      @Override
-                      public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
-                          Uri u = r.getUrl();
-                          String sch = u.getScheme();
-                          if ("https".equals(sch) || "about".equals(sch) || "data".equals(sch)
-                                  || "blob".equals(sch)) return null;
-                          if ("http".equals(sch) && isOnion(u.getHost())) return null;
-                          return new WebResourceResponse("text/plain", "utf-8",
-                                  new ByteArrayInputStream(new byte[0]));
+                          return true;
                       }
                   });
-              }
-
-              private boolean isOnion(String host) {
-                  return host != null && host.endsWith(".onion");
               }
 
               private String asset(String name) {
@@ -606,119 +403,7 @@ jobs:
                   }
               }
 
-              // ---------- Tor ----------
-
-              /** Startet das in die App eingebaute Tor und setzt danach den Proxy (fail-closed). */
-              private void startTor() {
-                  torDot.setTextColor(Color.parseColor("#FFB020"));
-                  Toast.makeText(this, "Tor wird gestartet - das kann beim ersten Mal ca. 1 Minute dauern",
-                          Toast.LENGTH_LONG).show();
-                  final Object[] svc = new Object[1];
-                  // Absturz-Erkennung: blieb die Markierung stehen, ist das native Tor beim letzten Start gecrasht
-                  final boolean skip = prefs.getBoolean("starting", false);
-                  if (skip) {
-                      prefs.edit().putBoolean("starting", false)
-                              .putString("crash", "Das eingebaute Tor ist beim letzten Start nativ abgestuerzt. "
-                                      + "Diesmal wird es uebersprungen - starte Orbot als Alternative.")
-                              .commit();
-                  } else {
-                      prefs.edit().putBoolean("starting", true).commit();
-                  }
-                  torConn = new ServiceConnection() {
-                      @Override public void onServiceConnected(ComponentName n, IBinder binder) {
-                          try {
-                              svc[0] = binder.getClass().getMethod("getService").invoke(binder);
-                          } catch (Exception e) {
-                              svc[0] = null;
-                          }
-                      }
-                      @Override public void onServiceDisconnected(ComponentName n) { svc[0] = null; }
-                  };
-                  try {
-                      if (!skip) {
-                          Intent i = new Intent().setClassName(this, "org.torproject.jni.TorService");
-                          bindService(i, torConn, BIND_AUTO_CREATE);
-                      }
-                  } catch (Exception e) {
-                      // faellt unten auf Orbot (Port 9050/9150) zurueck
-                  }
-                  new Thread(() -> {
-                      int found = 0;
-                      for (int t = 0; t < (skip ? 20 : 150) && found == 0; t++) {
-                          int cand = 0;
-                          try {
-                              if (svc[0] != null) {
-                                  Object r = svc[0].getClass().getMethod("getSocksPort").invoke(svc[0]);
-                                  if (r instanceof Integer) cand = (Integer) r;
-                              }
-                          } catch (Exception e) { cand = 0; }
-                          if (cand > 0 && portOpen(cand)) found = cand;
-                          else if (skip || t >= 45) {
-                              if (portOpen(9050)) found = 9050;
-                              else if (portOpen(9150)) found = 9150;
-                          }
-                          if (found == 0) {
-                              try { Thread.sleep(1000); } catch (InterruptedException e) { return; }
-                          }
-                      }
-                      final int port = found;
-                      prefs.edit().putBoolean("starting", false).commit();
-                      runOnUiThread(() -> {
-                          if (port == 0) {
-                              torDot.setTextColor(BAD);
-                              Toast.makeText(this, "Tor konnte nicht gestartet werden - Browser bleibt gesperrt",
-                                      Toast.LENGTH_LONG).show();
-                              return;
-                          }
-                          socksPort = port;
-                          torOk = true;
-                          torDot.setTextColor(OK);
-                          applyProxy(port);
-                      });
-                  }).start();
-              }
-
-              private boolean portOpen(int port) {
-                  try (Socket sk = new Socket()) {
-                      sk.connect(new InetSocketAddress("127.0.0.1", port), 800);
-                      return true;
-                  } catch (Exception e) {
-                      return false;
-                  }
-              }
-
-              private void applyProxy(int port) {
-                  if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
-                      Toast.makeText(this, "WebView unterstuetzt keinen Proxy - Browser gesperrt",
-                              Toast.LENGTH_LONG).show();
-                      return;
-                  }
-                  ProxyConfig cfg = new ProxyConfig.Builder()
-                          .addProxyRule("socks5://127.0.0.1:" + port).build();
-                  ProxyController.getInstance().setProxyOverride(cfg, Runnable::run, () ->
-                          runOnUiThread(() -> {
-                              proxyReady = true;
-                              if (!locked) home();
-                          }));
-              }
-
-              private void checkTor() {
-                  if (socksPort == 0) return;
-                  final int port = socksPort;
-                  new Thread(() -> {
-                      final boolean r = portOpen(port);
-                      runOnUiThread(() -> {
-                          torOk = r;
-                          torDot.setTextColor(r ? OK : BAD);
-                      });
-                  }).start();
-              }
-
-              // ---------- Navigation ----------
-
               private void home() {
-                  if (!proxyReady) return;
-                  checkTor();
                   clearAfter = true;
                   web.loadDataWithBaseURL("about:blank", asset("start.html"),
                           "text/html", "utf-8", null);
@@ -726,19 +411,11 @@ jobs:
 
               private void go(String in) {
                   if (in.isEmpty()) return;
-                  if (!proxyReady) return;
-                  if (!torOk) {
-                      Toast.makeText(this, "Tor startet noch oder ist nicht erreichbar",
-                              Toast.LENGTH_LONG).show();
-                      checkTor();
-                      return;
-                  }
                   String url;
                   if (in.matches("(?i)^https?://\\S+$")) {
                       url = in;
                   } else if (in.matches("(?i)^[^\\s/]+\\.[^\\s/]+(/\\S*)?$")) {
-                      String host = in.split("/")[0];
-                      url = (isOnion(host) ? "http://" : "https://") + in;
+                      url = "https://" + in;
                   } else {
                       try {
                           url = SEARCH + "?q=" + URLEncoder.encode(in, "UTF-8");
@@ -746,15 +423,10 @@ jobs:
                           return;
                       }
                   }
-                  Uri u = Uri.parse(url);
-                  if ("http".equals(u.getScheme()) && !isOnion(u.getHost())) {
-                      url = u.buildUpon().scheme("https").build().toString();
-                  }
+                  if (url.toLowerCase().startsWith("http://")) url = "https://" + url.substring(7);
                   bar.clearFocus();
                   web.loadUrl(url);
               }
-
-              // ---------- Datenschutz ----------
 
               private void wipe() {
                   CookieManager.getInstance().removeAllCookies(null);
@@ -763,100 +435,10 @@ jobs:
                   web.clearCache(true);
                   web.clearHistory();
                   web.clearFormData();
-                  web.clearSslPreferences();
-                  WebView.clearClientCertPreferences(null);
-              }
-
-              private void newIdentity() {
-                  wipe();
-                  home();
-                  Toast.makeText(this, "Alles gelöscht", Toast.LENGTH_SHORT).show();
-              }
-
-              // ---------- PIN-Sperre ----------
-
-              private String hash(String pin, byte[] salt) {
-                  try {
-                      SecretKeyFactory f = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA1");
-                      byte[] h = f.generateSecret(new PBEKeySpec(pin.toCharArray(), salt, 50000, 160)).getEncoded();
-                      return Base64.encodeToString(h, Base64.NO_WRAP);
-                  } catch (Exception e) {
-                      return "";
-                  }
-              }
-
-              private void showLock() {
-                  locked = true;
-                  mainView.setVisibility(View.GONE);
-                  lockView.setVisibility(View.VISIBLE);
-                  lockTitle.setText(prefs.contains("h") ? "ENTSPERREN" : "NEUE PIN FESTLEGEN (MIN. 4 ZIFFERN)");
-                  String crash = prefs.getString("crash", null);
-                  if (crash != null) {
-                      lockTitle.setText(lockTitle.getText() + "\n\nLETZTER ABSTURZ:\n" + crash);
-                      lockTitle.setTextSize(9);
-                      prefs.edit().remove("crash").apply();
-                  }
-                  pinField.setText("");
-              }
-
-              private void unlock() {
-                  locked = false;
-                  lockView.setVisibility(View.GONE);
-                  mainView.setVisibility(View.VISIBLE);
-                  home();
-              }
-
-              private void onPinSubmit() {
-                  String p = pinField.getText().toString();
-                  pinField.setText("");
-                  if (p.length() < 4) {
-                      Toast.makeText(this, "Mindestens 4 Ziffern", Toast.LENGTH_SHORT).show();
-                      return;
-                  }
-                  if (!prefs.contains("h")) {
-                      byte[] salt = new byte[16];
-                      new SecureRandom().nextBytes(salt);
-                      prefs.edit()
-                              .putString("salt", Base64.encodeToString(salt, Base64.NO_WRAP))
-                              .putString("h", hash(p, salt))
-                              .apply();
-                      unlock();
-                      return;
-                  }
-                  if (System.currentTimeMillis() < lockedUntil) {
-                      Toast.makeText(this, "Zu viele Versuche - kurz warten", Toast.LENGTH_SHORT).show();
-                      return;
-                  }
-                  byte[] salt = Base64.decode(prefs.getString("salt", ""), Base64.NO_WRAP);
-                  String expected = prefs.getString("h", "");
-                  if (MessageDigest.isEqual(hash(p, salt).getBytes(), expected.getBytes())) {
-                      fails = 0;
-                      unlock();
-                  } else {
-                      fails++;
-                      if (fails >= 5) {
-                          lockedUntil = System.currentTimeMillis() + 30000;
-                          fails = 0;
-                      }
-                      Toast.makeText(this, "Falsche PIN", Toast.LENGTH_SHORT).show();
-                  }
-              }
-
-              // ---------- Lebenszyklus ----------
-
-              @Override
-              protected void onPause() {
-                  super.onPause();
-                  if (!locked) {
-                      wipe();
-                      web.loadUrl("about:blank");
-                      showLock();
-                  }
               }
 
               @Override
               protected void onDestroy() {
-                  try { if (torConn != null) unbindService(torConn); } catch (Exception e) { }
                   wipe();
                   web.destroy();
                   super.onDestroy();
@@ -864,7 +446,7 @@ jobs:
 
               @Override
               public void onBackPressed() {
-                  if (!locked && web.canGoBack()) web.goBack();
+                  if (web.canGoBack()) web.goBack();
                   else super.onBackPressed();
               }
           }
