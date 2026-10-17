@@ -38,7 +38,11 @@ jobs:
               repositories { google(); mavenCentral(); gradlePluginPortal() }
           }
           dependencyResolutionManagement {
-              repositories { google(); mavenCentral() }
+              repositories {
+                  google()
+                  mavenCentral()
+                  maven { url "https://raw.githubusercontent.com/guardianproject/gpmaven/master" }
+              }
           }
           rootProject.name = "Ghost"
           include(":app")
@@ -65,7 +69,11 @@ jobs:
                   minSdk 24
                   targetSdk 34
                   versionCode 2
-                  versionName '2.0'
+                  versionName '3.0'
+                  ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
+              }
+              packagingOptions {
+                  jniLibs { useLegacyPackaging = true }
               }
               signingConfigs {
                   release {
@@ -95,11 +103,16 @@ jobs:
           }
           dependencies {
               implementation 'androidx.webkit:webkit:1.12.1'
+              implementation 'info.guardianproject:tor-android:0.4.8.11'
+              implementation 'info.guardianproject:jtorctl:0.4.5.7'
           }
           EOF
 
           cat > app/proguard-rules.pro <<'EOF'
           -dontwarn **
+          -keep class org.torproject.** { *; }
+          -keep class net.freehaven.** { *; }
+          -keep class info.guardianproject.** { *; }
           EOF
 
           # Neutrales Tarn-Icon (Taschenrechner)
@@ -211,6 +224,10 @@ jobs:
           package com.example.privbrowser;
 
           import android.app.Activity;
+          import android.content.ComponentName;
+          import android.content.Intent;
+          import android.content.ServiceConnection;
+          import android.os.IBinder;
           import android.content.SharedPreferences;
           import android.content.res.ColorStateList;
           import android.graphics.Color;
@@ -283,6 +300,8 @@ jobs:
               private EditText pinField;
               private SharedPreferences prefs;
 
+              private int socksPort = 0;
+              private ServiceConnection torConn;
               private boolean proxyReady = false;
               private boolean torOk = false;
               private boolean locked = true;
@@ -301,7 +320,7 @@ jobs:
 
                   buildUi();
                   setupWebView();
-                  startProxy();
+                  startTor();
                   showLock();
               }
 
@@ -579,34 +598,92 @@ jobs:
 
               // ---------- Tor ----------
 
-              /** Fail-closed: Proxy wird IMMER gesetzt; ohne laufendes Tor kommt kein Request durch. */
-              private void startProxy() {
+              /** Startet das in die App eingebaute Tor und setzt danach den Proxy (fail-closed). */
+              private void startTor() {
+                  torDot.setTextColor(Color.parseColor("#FFB020"));
+                  Toast.makeText(this, "Tor wird gestartet - das kann beim ersten Mal ca. 1 Minute dauern",
+                          Toast.LENGTH_LONG).show();
+                  final Object[] svc = new Object[1];
+                  torConn = new ServiceConnection() {
+                      @Override public void onServiceConnected(ComponentName n, IBinder binder) {
+                          try {
+                              svc[0] = binder.getClass().getMethod("getService").invoke(binder);
+                          } catch (Exception e) {
+                              svc[0] = null;
+                          }
+                      }
+                      @Override public void onServiceDisconnected(ComponentName n) { svc[0] = null; }
+                  };
+                  try {
+                      Intent i = new Intent().setClassName(this, "org.torproject.jni.TorService");
+                      bindService(i, torConn, BIND_AUTO_CREATE);
+                  } catch (Exception e) {
+                      // faellt unten auf Orbot (Port 9050/9150) zurueck
+                  }
+                  new Thread(() -> {
+                      int found = 0;
+                      for (int t = 0; t < 150 && found == 0; t++) {
+                          int cand = 0;
+                          try {
+                              if (svc[0] != null) {
+                                  Object r = svc[0].getClass().getMethod("getSocksPort").invoke(svc[0]);
+                                  if (r instanceof Integer) cand = (Integer) r;
+                              }
+                          } catch (Exception e) { cand = 0; }
+                          if (cand > 0 && portOpen(cand)) found = cand;
+                          else if (t >= 45) {
+                              if (portOpen(9050)) found = 9050;
+                              else if (portOpen(9150)) found = 9150;
+                          }
+                          if (found == 0) {
+                              try { Thread.sleep(1000); } catch (InterruptedException e) { return; }
+                          }
+                      }
+                      final int port = found;
+                      runOnUiThread(() -> {
+                          if (port == 0) {
+                              torDot.setTextColor(BAD);
+                              Toast.makeText(this, "Tor konnte nicht gestartet werden - Browser bleibt gesperrt",
+                                      Toast.LENGTH_LONG).show();
+                              return;
+                          }
+                          socksPort = port;
+                          torOk = true;
+                          torDot.setTextColor(OK);
+                          applyProxy(port);
+                      });
+                  }).start();
+              }
+
+              private boolean portOpen(int port) {
+                  try (Socket sk = new Socket()) {
+                      sk.connect(new InetSocketAddress("127.0.0.1", port), 800);
+                      return true;
+                  } catch (Exception e) {
+                      return false;
+                  }
+              }
+
+              private void applyProxy(int port) {
                   if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
                       Toast.makeText(this, "WebView unterstuetzt keinen Proxy - Browser gesperrt",
                               Toast.LENGTH_LONG).show();
-                      bar.setEnabled(false);
                       return;
                   }
                   ProxyConfig cfg = new ProxyConfig.Builder()
-                          .addProxyRule("socks5://127.0.0.1:9050").build();
+                          .addProxyRule("socks5://127.0.0.1:" + port).build();
                   ProxyController.getInstance().setProxyOverride(cfg, Runnable::run, () ->
                           runOnUiThread(() -> {
                               proxyReady = true;
-                              checkTor();
                               if (!locked) home();
                           }));
               }
 
               private void checkTor() {
+                  if (socksPort == 0) return;
+                  final int port = socksPort;
                   new Thread(() -> {
-                      boolean up;
-                      try (Socket sk = new Socket()) {
-                          sk.connect(new InetSocketAddress("127.0.0.1", 9050), 1500);
-                          up = true;
-                      } catch (Exception e) {
-                          up = false;
-                      }
-                      final boolean r = up;
+                      final boolean r = portOpen(port);
                       runOnUiThread(() -> {
                           torOk = r;
                           torDot.setTextColor(r ? OK : BAD);
@@ -628,7 +705,7 @@ jobs:
                   if (in.isEmpty()) return;
                   if (!proxyReady) return;
                   if (!torOk) {
-                      Toast.makeText(this, "Tor (Orbot) nicht erreichbar - starte Orbot",
+                      Toast.makeText(this, "Tor startet noch oder ist nicht erreichbar",
                               Toast.LENGTH_LONG).show();
                       checkTor();
                       return;
@@ -750,6 +827,7 @@ jobs:
 
               @Override
               protected void onDestroy() {
+                  try { if (torConn != null) unbindService(torConn); } catch (Exception e) { }
                   wipe();
                   web.destroy();
                   super.onDestroy();
