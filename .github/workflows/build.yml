@@ -614,6 +614,16 @@ jobs:
                   Toast.makeText(this, "Tor wird gestartet - das kann beim ersten Mal ca. 1 Minute dauern",
                           Toast.LENGTH_LONG).show();
                   final Object[] svc = new Object[1];
+                  // Absturz-Erkennung: blieb die Markierung stehen, ist das native Tor beim letzten Start gecrasht
+                  final boolean skip = prefs.getBoolean("starting", false);
+                  if (skip) {
+                      prefs.edit().putBoolean("starting", false)
+                              .putString("crash", "Das eingebaute Tor ist beim letzten Start nativ abgestuerzt. "
+                                      + "Diesmal wird es uebersprungen - starte Orbot als Alternative.")
+                              .commit();
+                  } else {
+                      prefs.edit().putBoolean("starting", true).commit();
+                  }
                   torConn = new ServiceConnection() {
                       @Override public void onServiceConnected(ComponentName n, IBinder binder) {
                           try {
@@ -625,14 +635,16 @@ jobs:
                       @Override public void onServiceDisconnected(ComponentName n) { svc[0] = null; }
                   };
                   try {
-                      Intent i = new Intent().setClassName(this, "org.torproject.jni.TorService");
-                      bindService(i, torConn, BIND_AUTO_CREATE);
+                      if (!skip) {
+                          Intent i = new Intent().setClassName(this, "org.torproject.jni.TorService");
+                          bindService(i, torConn, BIND_AUTO_CREATE);
+                      }
                   } catch (Exception e) {
                       // faellt unten auf Orbot (Port 9050/9150) zurueck
                   }
                   new Thread(() -> {
                       int found = 0;
-                      for (int t = 0; t < 150 && found == 0; t++) {
+                      for (int t = 0; t < (skip ? 20 : 150) && found == 0; t++) {
                           int cand = 0;
                           try {
                               if (svc[0] != null) {
@@ -641,7 +653,7 @@ jobs:
                               }
                           } catch (Exception e) { cand = 0; }
                           if (cand > 0 && portOpen(cand)) found = cand;
-                          else if (t >= 45) {
+                          else if (skip || t >= 45) {
                               if (portOpen(9050)) found = 9050;
                               else if (portOpen(9150)) found = 9150;
                           }
@@ -650,6 +662,7 @@ jobs:
                           }
                       }
                       final int port = found;
+                      prefs.edit().putBoolean("starting", false).commit();
                       runOnUiThread(() -> {
                           if (port == 0) {
                               torDot.setTextColor(BAD);
